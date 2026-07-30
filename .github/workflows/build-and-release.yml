@@ -1,0 +1,52 @@
+name: Build and Release OpenCore
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_tag:
+        description: 'Release Version Tag (e.g., v1.0.6-tahoe)'
+        required: true
+        default: 'latest'
+  push:
+    tags:
+      - 'v*' # Trigger automatically when a tag is pushed
+
+jobs:
+  build:
+    name: Build OpenCore on macOS
+    runs-on: macos-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive # We must fetch all the Kext source code
+          
+      - name: Install Build Dependencies
+        run: |
+          brew install mtools dosfstools wget jq
+          
+      - name: Compile OpenCore & Kexts
+        run: |
+          # The Makefile natively calls xcodebuild and hdiutil
+          make RELEASE_VERSION=${{ github.event.inputs.version_tag || github.ref_name }}
+          
+      - name: Generate Checksums
+        run: |
+          shasum -a 256 OpenCore-*.iso.gz > OpenCore-checksums.sha256
+          
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OpenCore ${{ github.event.inputs.version_tag || github.ref_name }}
+          tag_name: ${{ github.event.inputs.version_tag || github.ref_name }}
+          files: |
+            OpenCore-*.iso.gz
+            OpenCore-checksums.sha256
+          body: |
+            Automated build of the KVM-Opencore bootloader.
+            Compiled directly from source using Apple `xcodebuild` on GitHub Actions.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
